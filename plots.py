@@ -48,9 +48,10 @@ def plot_performance_metrics(results_df):
 
 def plot_confusion_matrix(y_true, y_pred, title):
     cm = confusion_matrix(y_true, y_pred)
-    labels = ['Legitimate', 'Phishing']
+    predicted_labels = ['Predicted Legitimate', 'Predicted Phishing']
+    true_labels = ['True Legitimate', 'True Phishing']
     fig = ff.create_annotated_heatmap(
-        cm, x=labels, y=labels,
+        cm, x=predicted_labels, y=true_labels,
         colorscale='Blues', showscale=True
     )
     fig.update_layout(title=title)

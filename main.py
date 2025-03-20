@@ -71,7 +71,7 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
     return df_scaled, y
 
 
-def apply_pca(X_train, X_test, n_components=0.95, verbose=False, visualize=False):
+def apply_pca(X_train, X_test, n_components=0.95):
     pca = PCA(n_components=n_components)
     X_train_pca = pca.fit_transform(X_train)
     X_test_pca = pca.transform(X_test)
@@ -94,8 +94,13 @@ def apply_pca_lda(X_train, X_test, y_train, n_components_pca=0.95, n_components_
 
 
 def minimum_distance_classifier(X_train, y_train, X_test):
+    # Convert inputs to numpy arrays to handle both DataFrames and numpy arrays
+    X_train = np.asarray(X_train)
+    X_test = np.asarray(X_test)
     classes = np.unique(y_train)
+    # Calculate the mean for each class
     means = {c: np.mean(X_train[y_train == c], axis=0) for c in classes}
+    # Predict the class with minimum distance for each test sample
     y_pred = [classes[np.argmin([np.linalg.norm(x - means[c]) for c in classes])] for x in X_test]
     return np.array(y_pred)
 
@@ -155,7 +160,7 @@ def main():
         results.append({'Method': name, 'Classifier': 'MDC', **metrics_mdc})
 
         # Fisher's LDA Classifier
-        if name != 'LDA':  # Avogitid redundancy if LDA is already the transformation
+        if name != 'LDA':  # Avoid redundancy if LDA is already the transformation
             lda_clf = LDA()
             lda_clf.fit(X_tr, y_train)
             y_pred_lda = lda_clf.predict(X_te)
@@ -164,6 +169,7 @@ def main():
 
     # Display results as DataFrame
     results_df = pd.DataFrame(results)
+    plot_performance_metrics(results_df)
     print("\nFinal Results:")
     print(results_df.to_string(index=False))
 
