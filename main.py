@@ -7,7 +7,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
-from plots import plot_lda_projection, plot_pca_explained_variance, plot_decision_boundary, plot_performance_metrics, plot_confusion_matrix
+from plots import plot_lda_projection, plot_pca_explained_variance, plot_performance_metrics, plot_confusion_matrix
 
 
 def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=False):
@@ -20,8 +20,17 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
         print(df_numeric.info())
         print(df_numeric.describe())
 
+    scaler = StandardScaler()
+    # Fit and transform the non-categorical features
+    scaled_features = scaler.fit_transform(df_numeric)
+    # Convert back to DataFrame for convenience
+    df_scaled = pd.DataFrame(scaled_features, columns=df_numeric.columns)
+
+    if verbose:
+        print(df_scaled.describe())
+
     # Compute the correlation matrix
-    corr_matrix = df_numeric.corr()
+    corr_matrix = df_scaled.corr()
 
     # Interactive heatmap to visualize highly correlated features
     if heatmap:
@@ -50,7 +59,7 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
     # Plot histograms for all features to visualize distributions
     if histograms:
         for feat in df_numeric.columns:
-            fig = px.histogram(df_numeric[feat], nbins=500, title=f"{feat} Distribution",)
+            fig = px.histogram(df_numeric[feat], nbins=500, title=f"{feat} Distribution", )
             fig.show()
 
     # Plot boxplots for all features to visualize distributions
@@ -58,15 +67,6 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
         for feat in df_numeric.columns:
             fig = px.box(df_numeric[feat], title=f"{feat} Boxplot", )
             fig.show()
-
-    scaler = StandardScaler()
-    # Fit and transform the non-categorical features
-    scaled_features = scaler.fit_transform(df_numeric)
-    # Convert back to DataFrame for convenience
-    df_scaled = pd.DataFrame(scaled_features, columns=df_numeric.columns)
-
-    if verbose:
-        print(df_scaled.describe())
 
     return df_scaled, y
 
@@ -100,12 +100,12 @@ def minimum_distance_classifier(X_train, y_train, X_test):
     classes = np.unique(y_train)
     # Calculate the mean for each class
     means = {c: np.mean(X_train[y_train == c], axis=0) for c in classes}
-    # Predict the class with minimum distance for each test sample
-    y_pred = [classes[np.argmin([np.linalg.norm(x - means[c]) for c in classes])] for x in X_test]
+    # Predict the class with minimum distance for each test sample (Euclidean)
+    y_pred = [classes[np.argmin([np.linalg.norm(sample - means[c]) for c in classes])] for sample in X_test]
     return np.array(y_pred)
 
 
-def evaluate_model(y_true, y_pred, title):
+def evaluate_model(y_true, y_pred, title, visualize=False):
     metrics = {
         'Accuracy': accuracy_score(y_true, y_pred),
         'Precision': precision_score(y_true, y_pred),
@@ -115,12 +115,13 @@ def evaluate_model(y_true, y_pred, title):
     print(f"\n{title} Metrics:")
     for k, v in metrics.items():
         print(f"{k}: {v:.4f}")
-    plot_confusion_matrix(y_true, y_pred, title)
+    if visualize:
+        plot_confusion_matrix(y_true, y_pred, title)
     return metrics
 
 
 def main():
-    df_scaled, y = pre_processing(heatmap=True, verbose=True, histograms=False, box_plots=False)
+    df_scaled, y = pre_processing(heatmap=True, verbose=True, histograms=True, box_plots=True)
     df_scaled.to_csv('data/scaled_data.csv', index=False)
     print("Scaled data saved to 'data/scaled_data.csv'.")
 
@@ -139,7 +140,6 @@ def main():
 
     plot_pca_explained_variance(pca)
     plot_lda_projection(X_train_lda, y_train)
-    plot_decision_boundary(X_train_pca[:, :2], y_train, "MDC Decision Boundary (PCA Components)")
 
     # --- Classifiers ---
     # Define datasets to evaluate
@@ -156,7 +156,7 @@ def main():
     for name, (X_tr, X_te) in datasets.items():
         # Minimum Distance Classifier (MDC)
         y_pred_mdc = minimum_distance_classifier(X_tr, y_train, X_te)
-        metrics_mdc = evaluate_model(y_test, y_pred_mdc, f"{name} - MDC")
+        metrics_mdc = evaluate_model(y_test, y_pred_mdc, f"{name} - MDC", visualize=True)
         results.append({'Method': name, 'Classifier': 'MDC', **metrics_mdc})
 
         # Fisher's LDA Classifier
@@ -173,5 +173,6 @@ def main():
     print("\nFinal Results:")
     print(results_df.to_string(index=False))
 
-if __name__ == "__main__" :
+
+if __name__ == "__main__":
     main()

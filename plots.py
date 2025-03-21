@@ -3,9 +3,10 @@ import pandas as pd
 import plotly.express as px
 from sklearn.metrics import confusion_matrix
 import plotly.figure_factory as ff
+import plotly.graph_objects as go
 
 
-def plot_pca_explained_variance(pca):
+def plot_pca_explained_variance(pca, explained_variance=0.95):
     # Cumulative explained variance
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
 
@@ -16,8 +17,8 @@ def plot_pca_explained_variance(pca):
         title="PCA Cumulative Explained Variance",
         labels={'x': 'Number of Components', 'y': 'Cumulative Explained Variance'}
     )
-    fig.add_hline(y=0.95, line_dash="dash", line_color="red",
-                  annotation_text="95% Variance Threshold")
+    fig.add_hline(y=explained_variance, line_dash="dash", line_color="red",
+                  annotation_text="{:.2f}% Variance Threshold".format(explained_variance * 100),)
     fig.show()
 
 
@@ -43,7 +44,7 @@ def plot_performance_metrics(results_df):
         facet_col='Metric', barmode='group',
         title="Classifier Performance Across Methods and Metrics"
     )
-    fig.update_layout(height=600, width=1200)
+    fig.update_yaxes(range=[0.95, 1])
     fig.show()
 
 def plot_confusion_matrix(y_true, y_pred, title):
@@ -55,24 +56,4 @@ def plot_confusion_matrix(y_true, y_pred, title):
         colorscale='Blues', showscale=True
     )
     fig.update_layout(title=title)
-    fig.show()
-
-
-def plot_decision_boundary(X, y, title):
-    df = pd.DataFrame({'PC1': X[:, 0], 'PC2': X[:, 1], 'Label': y})
-    fig = px.scatter(
-        df, x='PC1', y='PC2', color='Label',
-        title=title, opacity=0.5
-    )
-
-    # Calculate class means
-    means = df.groupby('Label').mean()
-    fig.add_trace(px.scatter(
-        means, x='PC1', y='PC2',
-        symbol=means.index,
-        symbol_sequence=['x', 'x'],
-        size=[20, 20],
-        color_discrete_sequence=['black', 'black']
-    ).data[0])
-
     fig.show()
