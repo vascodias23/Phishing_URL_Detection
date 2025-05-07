@@ -4,13 +4,13 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
 from plots import plot_lda_projection, plot_pca_explained_variance, plot_performance_metrics, plot_confusion_matrix
 
-
-def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=False):
+# Adapted from a previous 'pre_processing' function
+def data_analysis(heatmap=False, verbose=False, box_plots=False, histograms=False):
     df = pd.read_csv('data/PhiUSIIL_Phishing_URL_Dataset.csv')
 
     # This will select only numeric (non-categorical) columns (int, float)
@@ -20,17 +20,11 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
         print(df_numeric.info())
         print(df_numeric.describe())
 
-    scaler = StandardScaler()
-    # Fit and transform the non-categorical features
-    scaled_features = scaler.fit_transform(df_numeric)
-    # Convert back to DataFrame for convenience
-    df_scaled = pd.DataFrame(scaled_features, columns=df_numeric.columns)
-
     if verbose:
-        print(df_scaled.describe())
+        print(df_numeric.describe())
 
     # Compute the correlation matrix
-    corr_matrix = df_scaled.corr()
+    corr_matrix = df_numeric.corr()
 
     # Interactive heatmap to visualize highly correlated features
     if heatmap:
@@ -68,29 +62,57 @@ def pre_processing(heatmap=False, verbose=False, box_plots=False, histograms=Fal
             fig = px.box(df_numeric[feat], title=f"{feat} Boxplot", )
             fig.show()
 
-    return df_scaled, y
+    return
 
 
-def apply_pca(X_train, X_test, n_components=0.95):
-    pca = PCA(n_components=n_components)
+def remove_correlated_features(X_train, y_train, threshold=0.95):
+    corr_matrix = X_train.corr().abs()
+    
+    correlated_pairs = []
+    columns = X_train.columns
+    for i in range(len(columns)):
+        for j in range(i + 1, len(columns)):
+            if corr_matrix.iloc[i, j] > threshold:
+                correlated_pairs.append((columns[i], columns[j]))
+
+    features_to_drop = set()
+    for feat1, feat2 in correlated_pairs:
+        # Calculate correlation with target
+        corr1 = abs(np.corrcoef(X_train[feat1], y_train)[0, 1])
+        corr2 = abs(np.corrcoef(X_train[feat2], y_train)[0, 1])
+
+        if corr1 > corr2:
+            features_to_drop.add(feat2)
+        else:
+            features_to_drop.add(feat1)
+
+    # Ensure features exist in the DataFrame
+    valid_drops = [f for f in features_to_drop if f in X_train.columns]
+    return X_train.drop(columns=valid_drops), valid_drops
+
+
+def apply_transformations(X_train, X_test, y_train, n_components_pca=0.95, n_components_lda=1):
+    # PCA
+    pca = PCA(n_components=n_components_pca)
     X_train_pca = pca.fit_transform(X_train)
     X_test_pca = pca.transform(X_test)
-    return X_train_pca, X_test_pca, pca
 
-
-def apply_lda(X_train, X_test, y_train, n_components=1):
-    lda = LDA(n_components=n_components)
+    # LDA (on original data)
+    lda = LDA(n_components=n_components_lda)
     X_train_lda = lda.fit_transform(X_train, y_train)
     X_test_lda = lda.transform(X_test)
-    return X_train_lda, X_test_lda, lda
 
+    # PCA + LDA
+    lda_pca = LDA(n_components=n_components_lda)
+    X_train_pca_lda = lda_pca.fit_transform(X_train_pca, y_train)
+    X_test_pca_lda = lda_pca.transform(X_test_pca)
 
-def apply_pca_lda(X_train, X_test, y_train, n_components_pca=0.95, n_components_lda=1):
-    # Apply PCA first
-    X_train_pca, X_test_pca, pca = apply_pca(X_train, X_test, n_components_pca)
-    # Then apply LDA on PCA-transformed data
-    X_train_pca_lda, X_test_pca_lda, lda = apply_lda(X_train_pca, X_test_pca, y_train, n_components_lda)
-    return X_train_pca_lda, X_test_pca_lda, (pca, lda)
+    return {
+        'Original': (X_train, X_test),
+        'PCA': (X_train_pca, X_test_pca),
+        'LDA': (X_train_lda, X_test_lda),
+        'PCA+LDA': (X_train_pca_lda, X_test_pca_lda)
+    }
 
 
 def minimum_distance_classifier(X_train, y_train, X_test):
@@ -121,57 +143,85 @@ def evaluate_model(y_true, y_pred, title, visualize=False):
 
 
 def main():
-    df_scaled, y = pre_processing(heatmap=True, verbose=True, histograms=True, box_plots=True)
-    df_scaled.to_csv('data/scaled_data.csv', index=False)
-    print("Scaled data saved to 'data/scaled_data.csv'.")
+    data_analysis(verbose=True)
 
-    # Split between train and test data (cross-validation)
-    X_train, X_test, y_train, y_test = train_test_split(df_scaled, y, test_size=0.2, stratify=y, random_state=42)
+    df = pd.read_csv('data/PhiUSIIL_Phishing_URL_Dataset.csv')
+    y = df['label']
+    X = df.select_dtypes(include=['int64', 'float64']).drop(columns='label')
 
-    # --- Feature Reduction ---
-    # 1. PCA only
-    X_train_pca, X_test_pca, pca = apply_pca(X_train, X_test)
-
-    # 2. LDA only (on original scaled data)
-    X_train_lda, X_test_lda, lda = apply_lda(X_train, X_test, y_train)
-
-    # 3. PCA + LDA
-    X_train_pca_lda, X_test_pca_lda, _ = apply_pca_lda(X_train, X_test, y_train)
-
-    plot_pca_explained_variance(pca)
-    plot_lda_projection(X_train_lda, y_train)
-
-    # --- Classifiers ---
-    # Define datasets to evaluate
-    datasets = {
-        'Original': (X_train, X_test),
-        'PCA': (X_train_pca, X_test_pca),
-        'LDA': (X_train_lda, X_test_lda),
-        'PCA+LDA': (X_train_pca_lda, X_test_pca_lda)
-    }
-
-    # Store results
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     results = []
 
-    for name, (X_tr, X_te) in datasets.items():
-        # Minimum Distance Classifier (MDC)
-        y_pred_mdc = minimum_distance_classifier(X_tr, y_train, X_te)
-        metrics_mdc = evaluate_model(y_test, y_pred_mdc, f"{name} - MDC", visualize=True)
-        results.append({'Method': name, 'Classifier': 'MDC', **metrics_mdc})
+    for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
+        X_train_raw, X_test_raw = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-        # Fisher's LDA Classifier
-        if name != 'LDA':  # Avoid redundancy if LDA is already the transformation
-            lda_clf = LDA()
-            lda_clf.fit(X_tr, y_train)
-            y_pred_lda = lda_clf.predict(X_te)
-            metrics_lda = evaluate_model(y_test, y_pred_lda, f"{name} - LDA Classifier")
-            results.append({'Method': name, 'Classifier': 'LDA', **metrics_lda})
+        # 1. Remove correlated features (using training data only)
+        X_train_reduced, dropped_features = remove_correlated_features(X_train_raw, y_train)
+        X_test_reduced = X_test_raw.drop(columns=dropped_features)
 
-    # Display results as DataFrame
+        # 2. Scale data
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train_reduced)
+        X_test_scaled = scaler.transform(X_test_reduced)
+
+        # 3. Apply transformations
+        datasets = apply_transformations(X_train_scaled, X_test_scaled, y_train)
+
+        # 4. Evaluate classifiers for each dataset
+        for dataset_name, (X_tr, X_te) in datasets.items():
+            # Minimum Distance Classifier
+            y_pred_mdc = minimum_distance_classifier(X_tr, y_train, X_te)
+            metrics_mdc = {
+                'Accuracy': accuracy_score(y_test, y_pred_mdc),
+                'Precision': precision_score(y_test, y_pred_mdc),
+                'Recall': recall_score(y_test, y_pred_mdc),
+                'F1': f1_score(y_test, y_pred_mdc)
+            }
+            results.append({
+                'Fold': fold,
+                'Dataset': dataset_name,
+                'Classifier': 'MDC',
+                **metrics_mdc
+            })
+
+            # LDA Classifier (skip for LDA dataset to avoid redundancy)
+            if dataset_name != 'LDA':
+                lda_clf = LDA()
+                lda_clf.fit(X_tr, y_train)
+                y_pred_lda = lda_clf.predict(X_te)
+                metrics_lda = {
+                    'Accuracy': accuracy_score(y_test, y_pred_lda),
+                    'Precision': precision_score(y_test, y_pred_lda),
+                    'Recall': recall_score(y_test, y_pred_lda),
+                    'F1': f1_score(y_test, y_pred_lda)
+                }
+                results.append({
+                    'Fold': fold,
+                    'Dataset': dataset_name,
+                    'Classifier': 'LDA',
+                    **metrics_lda
+                })
+
+    # Aggregate and display results
     results_df = pd.DataFrame(results)
-    plot_performance_metrics(results_df)
-    print("\nFinal Results:")
-    print(results_df.to_string(index=False))
+    results_df.round(3).to_csv('results/full_results.csv', index=False)
+    print("Full results saved to 'results/full_results.csv'.")
+
+    summary = results_df.groupby(['Dataset', 'Classifier']).agg(['mean', 'std'])
+
+    # Flatten multi-level column headers for CSV
+    summary.columns = ['_'.join(col).strip() for col in summary.columns.values]
+    summary.round(3).to_csv('results/results_summary.csv', index=True)
+    print("Results saved to 'results/results_summary.csv'.")
+
+    with open('results/results_summary.txt', 'w') as f:
+        f.write("=== Phishing URL Detection Results ===\n\n")
+        f.write("Aggregated Metrics (Mean ± Std):\n")
+        f.write(summary.to_string())
+        f.write("\n\n=== Full Results (All Folds) ===\n")
+        f.write(results_df.to_string(index=False))
+    print("Text summary saved to 'results/results_summary.txt'.")
 
 
 if __name__ == "__main__":
