@@ -1,11 +1,15 @@
 import pandas as pd
 import plotly.express as px
 import numpy as np
+
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 
 from plots import plot_lda_projection, plot_pca_explained_variance, plot_performance_metrics, plot_confusion_matrix
 
@@ -142,7 +146,7 @@ def evaluate_model(y_true, y_pred, title, visualize=False):
     return metrics
 
 
-def main():
+def main(MDC=True, LDAC=True, kNN=True, SGDC=True, SVM=True):
     data_analysis(verbose=True)
 
     df = pd.read_csv('data/PhiUSIIL_Phishing_URL_Dataset.csv')
@@ -171,22 +175,23 @@ def main():
         # 4. Evaluate classifiers for each dataset
         for dataset_name, (X_tr, X_te) in datasets.items():
             # Minimum Distance Classifier
-            y_pred_mdc = minimum_distance_classifier(X_tr, y_train, X_te)
-            metrics_mdc = {
-                'Accuracy': accuracy_score(y_test, y_pred_mdc),
-                'Precision': precision_score(y_test, y_pred_mdc),
-                'Recall': recall_score(y_test, y_pred_mdc),
-                'F1': f1_score(y_test, y_pred_mdc)
-            }
-            results.append({
-                'Fold': fold,
-                'Dataset': dataset_name,
-                'Classifier': 'MDC',
-                **metrics_mdc
-            })
+            if MDC:
+                y_pred_mdc = minimum_distance_classifier(X_tr, y_train, X_te)
+                metrics_mdc = {
+                    'Accuracy': accuracy_score(y_test, y_pred_mdc),
+                    'Precision': precision_score(y_test, y_pred_mdc),
+                    'Recall': recall_score(y_test, y_pred_mdc),
+                    'F1': f1_score(y_test, y_pred_mdc)
+                }
+                results.append({
+                    'Fold': fold,
+                    'Dataset': dataset_name,
+                    'Classifier': 'MDC',
+                    **metrics_mdc
+                })
 
             # LDA Classifier (skip for LDA dataset to avoid redundancy)
-            if dataset_name != 'LDA':
+            if dataset_name != 'LDA' and LDAC:
                 lda_clf = LDA()
                 lda_clf.fit(X_tr, y_train)
                 y_pred_lda = lda_clf.predict(X_te)
@@ -201,6 +206,72 @@ def main():
                     'Dataset': dataset_name,
                     'Classifier': 'LDA',
                     **metrics_lda
+                })
+
+            # -- k-Nearest Neighbors --
+            if kNN:
+                knn = KNeighborsClassifier(n_neighbors=3)
+                knn.fit(X_tr, y_train)
+                y_pred_knn = knn.predict(X_te)
+                results.append({
+                    'Fold': fold,
+                    'Dataset': dataset_name,
+                    'Classifier': 'kNN',
+                    'Accuracy': accuracy_score(y_test, y_pred_knn),
+                    'Precision': precision_score(y_test, y_pred_knn),
+                    'Recall': recall_score(y_test, y_pred_knn),
+                    'F1': f1_score(y_test, y_pred_knn)
+                })
+
+            # -- Logistic Regression --
+            #print("Logistic Regression")
+            #logreg = LogisticRegression(penalty='l2', C=1.0, solver='saga', max_iter=100, n_jobs=5)
+            #logreg.fit(X_tr, y_train)
+            #y_pred_logreg = logreg.predict(X_te)
+            #results.append({
+            #    'Fold': fold,
+            #    'Dataset': dataset_name,
+            #    'Classifier': 'LogisticRegression',
+            #    'Accuracy': accuracy_score(y_test, y_pred_logreg),
+            #    'Precision': precision_score(y_test, y_pred_logreg),
+            #    'Recall': recall_score(y_test, y_pred_logreg),
+            #    'F1': f1_score(y_test, y_pred_logreg)
+            #})
+
+            if SGDC:
+                sgd = SGDClassifier(
+                    loss='log_loss',  # logistic regression via SGD
+                    penalty='l2',
+                    max_iter=1000,
+                    tol=1e-3,
+                    n_jobs=-1,
+                    random_state=42,
+                    average=True
+                )
+                sgd.fit(X_tr, y_train)
+                y_pred_sgd = sgd.predict(X_te)
+                results.append({
+                        'Fold': fold,
+                        'Dataset': dataset_name,
+                        'Classifier': 'LogisticRegression',
+                        'Accuracy': accuracy_score(y_test, y_pred_sgd),
+                        'Precision': precision_score(y_test, y_pred_sgd),
+                        'Recall': recall_score(y_test, y_pred_sgd),
+                        'F1': f1_score(y_test, y_pred_sgd)
+                     })
+            # -- SVM (RBF Kernel) --
+            if SVM:
+                svm_clf = SVC(kernel='rbf', C=1.0, gamma='scale',)
+                svm_clf.fit(X_tr, y_train)
+                y_pred_svm = svm_clf.predict(X_te)
+                results.append({
+                    'Fold': fold,
+                    'Dataset': dataset_name,
+                    'Classifier': 'SVM_RBF',
+                    'Accuracy': accuracy_score(y_test, y_pred_svm),
+                    'Precision': precision_score(y_test, y_pred_svm),
+                    'Recall': recall_score(y_test, y_pred_svm),
+                    'F1': f1_score(y_test, y_pred_svm)
                 })
 
     # Aggregate and display results
